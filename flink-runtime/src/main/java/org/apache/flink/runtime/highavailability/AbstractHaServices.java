@@ -26,8 +26,9 @@ import org.apache.flink.runtime.blob.BlobStoreService;
 import org.apache.flink.runtime.checkpoint.CheckpointRecoveryFactory;
 import org.apache.flink.runtime.jobmanager.JobGraphStore;
 import org.apache.flink.runtime.leaderelection.DefaultLeaderElectionService;
-import org.apache.flink.runtime.leaderelection.LeaderElectionDriverFactory;
+import org.apache.flink.runtime.leaderelection.LeaderElection;
 import org.apache.flink.runtime.leaderelection.LeaderElectionService;
+import org.apache.flink.runtime.leaderelection.MultipleComponentLeaderElectionDriverFactory;
 import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalService;
 import org.apache.flink.util.ExceptionUtils;
 
@@ -110,23 +111,23 @@ public abstract class AbstractHaServices implements HighAvailabilityServices {
     }
 
     @Override
-    public LeaderElectionService getResourceManagerLeaderElectionService() throws Exception {
-        return createLeaderElectionService(getLeaderPathForResourceManager());
+    public LeaderElection getResourceManagerLeaderElection() throws Exception {
+        return createLeaderElection(getLeaderPathForResourceManager());
     }
 
     @Override
-    public LeaderElectionService getDispatcherLeaderElectionService() throws Exception {
-        return createLeaderElectionService(getLeaderPathForDispatcher());
+    public LeaderElection getDispatcherLeaderElection() throws Exception {
+        return createLeaderElection(getLeaderPathForDispatcher());
     }
 
     @Override
-    public LeaderElectionService getJobManagerLeaderElectionService(JobID jobID) throws Exception {
-        return createLeaderElectionService(getLeaderPathForJobManager(jobID));
+    public LeaderElection getJobManagerLeaderElection(JobID jobID) throws Exception {
+        return createLeaderElection(getLeaderPathForJobManager(jobID));
     }
 
     @Override
-    public LeaderElectionService getClusterRestEndpointLeaderElectionService() throws Exception {
-        return createLeaderElectionService(getLeaderPathForRestServer());
+    public LeaderElection getClusterRestEndpointLeaderElection() throws Exception {
+        return createLeaderElection(getLeaderPathForRestServer());
     }
 
     @Override
@@ -240,24 +241,30 @@ public abstract class AbstractHaServices implements HighAvailabilityServices {
                 executor);
     }
 
-    private LeaderElectionService createLeaderElectionService(String leaderName) throws Exception {
+    private LeaderElection createLeaderElection(String leaderName) throws Exception {
         final DefaultLeaderElectionService leaderElectionService =
                 new DefaultLeaderElectionService(createLeaderElectionDriverFactory(leaderName));
         leaderElectionService.startLeaderElectionBackend();
 
         closeableRegistry.registerCloseable(leaderElectionService);
-        return leaderElectionService;
+        // the leaderName which is passed as a contenderID here is not actively used within the
+        // DefaultLeaderElectionService for now - this will change in a future step where the
+        // DefaultLeaderElectionService will start to use MultipleComponentLeaderElectionDriver
+        // instead of LeaderElectionDriver and fully replace
+        // DefaultMultipleComponentLeaderElectionService (FLINK-31783)
+        return leaderElectionService.createLeaderElection("unused-contender-id");
     }
 
     /**
-     * Create {@link LeaderElectionDriverFactory} instance for the specified leaderName.
+     * Create {@link MultipleComponentLeaderElectionDriverFactory} instance for the specified
+     * leaderName.
      *
      * @param leaderName ConfigMap name in Kubernetes or child node path in Zookeeper.
-     * @return Return {@code LeaderElectionDriverFactory} used for the {@link
+     * @return Return {@code MultipleComponentLeaderElectionDriverFactory} used for the {@link
      *     LeaderElectionService}.
      */
-    protected abstract LeaderElectionDriverFactory createLeaderElectionDriverFactory(
-            String leaderName);
+    protected abstract MultipleComponentLeaderElectionDriverFactory
+            createLeaderElectionDriverFactory(String leaderName);
 
     /**
      * Create leader retrieval service with specified leaderName.

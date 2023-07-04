@@ -162,7 +162,8 @@ class ZooKeeperLeaderRetrievalTest {
                                                 testingFatalErrorHandlerResource
                                                         .getTestingFatalErrorHandler()),
                                         ZooKeeperUtils.generateLeaderLatchPath("")),
-                                new TestingLeaderElectionListener());
+                                new TestingLeaderElectionListener(),
+                                testingFatalErrorHandlerResource.getTestingFatalErrorHandler());
                 externalProcessDriver.isLeader();
 
                 externalProcessDriver.publishLeaderInformation(
@@ -180,18 +181,18 @@ class ZooKeeperLeaderRetrievalTest {
 
                 thread.start();
 
+                leaderElection =
+                        highAvailabilityServices.getJobManagerLeaderElection(
+                                HighAvailabilityServices.DEFAULT_JOB_ID);
                 TestingContender correctLeaderAddressContender =
-                        new TestingContender(
-                                correctAddress,
-                                highAvailabilityServices.getJobManagerLeaderElectionService(
-                                        HighAvailabilityServices.DEFAULT_JOB_ID));
+                        new TestingContender(correctAddress, leaderElection);
 
                 Thread.sleep(sleepingTime);
 
                 externalProcessDriver.notLeader();
                 externalProcessDriver.close();
 
-                leaderElection = correctLeaderAddressContender.startLeaderElection();
+                correctLeaderAddressContender.startLeaderElection();
 
                 thread.join();
 
