@@ -21,6 +21,7 @@ import org.apache.flink.runtime.checkpoint.CheckpointException;
 import org.apache.flink.runtime.checkpoint.CheckpointMetaData;
 import org.apache.flink.runtime.checkpoint.CheckpointMetricsBuilder;
 import org.apache.flink.runtime.checkpoint.CheckpointOptions;
+import org.apache.flink.runtime.io.network.api.FlushEvent;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
@@ -107,4 +108,22 @@ public interface CheckpointableTask {
      * @param cause The reason why the checkpoint was aborted during alignment
      */
     void abortCheckpointOnBarrier(long checkpointId, CheckpointException cause) throws IOException;
+
+    /**
+     * This method is called when a task receives a flush event with higher id from one of the input
+     * channels.
+     * @param flushEvent The flush event received from upstream tasks.
+     */
+    void triggerFlushEventOnEvent(FlushEvent flushEvent) throws IOException;
+
+    /**
+     * This method is used to broadcast flush events to downstream operators, asynchronously
+     * by the checkpoint coordinator.
+     *
+     * <p>This method is called for tasks that start the flushing operation by injecting the initial
+     * flush events, i.e., the source tasks. In contrast, flush events on downstream tasks, triggered
+     * by receiving flush events, invoke the {@link #triggerFlushEventOnEvent(FlushEvent)} method.
+     * */
+    CompletableFuture<Boolean> triggerFlushEventAsync(
+            long flushEventID, long flushEventTimeStamp);
 }

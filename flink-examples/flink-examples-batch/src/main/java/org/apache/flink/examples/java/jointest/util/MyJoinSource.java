@@ -6,9 +6,7 @@ import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunctio
 
 import java.util.Random;
 
-/**
- * A parallel source to generate data stream for joining operation.
- */
+/** A parallel source to generate data stream for joining operation. */
 public class MyJoinSource extends RichParallelSourceFunction<Integer> {
 
     private Random random;
@@ -50,6 +48,5 @@ public class MyJoinSource extends RichParallelSourceFunction<Integer> {
     }
 
     @Override
-    public void cancel() {
-    }
+    public void cancel() {}
 }
