@@ -255,6 +255,8 @@ public class DefaultExecutionGraph implements ExecutionGraph, InternalExecutionG
     /** TODO, replace it with main thread executor. */
     @Nullable private ScheduledExecutorService checkpointCoordinatorTimer;
 
+    @Nullable private ScheduledExecutorService flushEventTimer;
+
     /**
      * Checkpoint stats tracker separate from the coordinator in order to be available after
      * archiving.
@@ -480,11 +482,15 @@ public class DefaultExecutionGraph implements ExecutionGraph, InternalExecutionG
                         });
 
         checkState(checkpointCoordinatorTimer == null);
+        checkState(flushEventTimer == null);
 
         checkpointCoordinatorTimer =
                 Executors.newSingleThreadScheduledExecutor(
                         new DispatcherThreadFactory(
                                 Thread.currentThread().getThreadGroup(), "Checkpoint Timer"));
+        flushEventTimer = Executors.newSingleThreadScheduledExecutor(
+                new DispatcherThreadFactory(
+                        Thread.currentThread().getThreadGroup(), "Flush Event Timer"));
 
         // create the coordinator that triggers and commits checkpoints and holds the state
         checkpointCoordinator =
@@ -501,7 +507,8 @@ public class DefaultExecutionGraph implements ExecutionGraph, InternalExecutionG
                         failureManager,
                         createCheckpointPlanCalculator(
                                 chkConfig.isEnableCheckpointsAfterTasksFinish()),
-                        checkpointStatsTracker);
+                        checkpointStatsTracker,
+                        new ScheduledExecutorServiceAdapter(flushEventTimer));
 
         // register the master hooks on the checkpoint coordinator
         for (MasterTriggerRestoreHook<?> hook : masterHooks) {
@@ -512,7 +519,7 @@ public class DefaultExecutionGraph implements ExecutionGraph, InternalExecutionG
             }
         }
 
-        if (checkpointCoordinator.isPeriodicCheckpointingConfigured()) {
+        if (checkpointCoordinator.isPeriodicCheckpointingConfigured() || checkpointCoordinator.isAllowedLatencyConfigured()) {
             // the periodic checkpoint scheduler is activated and deactivated as a result of
             // job status changes (running -> on, all other states -> off)
             registerJobStatusListener(checkpointCoordinator.createActivatorDeactivator());
@@ -1335,6 +1342,10 @@ public class DefaultExecutionGraph implements ExecutionGraph, InternalExecutionG
             if (checkpointCoordinatorTimer != null) {
                 checkpointCoordinatorTimer.shutdownNow();
                 checkpointCoordinatorTimer = null;
+            }
+            if (flushEventTimer != null) {
+                flushEventTimer.shutdownNow();
+                flushEventTimer = null;
             }
         } catch (Exception e) {
             LOG.error("Error while cleaning up after execution", e);

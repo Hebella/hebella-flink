@@ -1385,6 +1385,27 @@ public class Task
         }
     }
 
+    public void triggerFlushEvent(
+            final long flushEventID,
+            final long flushEventTimestamp) {
+
+        final TaskInvokable invokable = this.invokable;
+
+        if (executionState == ExecutionState.RUNNING) {
+            checkState(invokable instanceof CheckpointableTask, "invokable is not checkpointable");
+            try {
+                ((CheckpointableTask) invokable)
+                        .triggerFlushEventAsync(flushEventID, flushEventTimestamp)
+                        .handle(
+                                (triggerResult, exception) -> {
+                                    return exception == null && triggerResult;
+                                });
+            } catch (RejectedExecutionException ex) {
+                System.out.println("task rejects to emit flush events");
+            }
+        }
+    }
+
     private void declineCheckpoint(long checkpointID, CheckpointFailureReason failureReason) {
         declineCheckpoint(checkpointID, failureReason, null);
     }
