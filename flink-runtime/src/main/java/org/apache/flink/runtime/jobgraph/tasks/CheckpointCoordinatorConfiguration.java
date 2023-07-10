@@ -35,6 +35,8 @@ public class CheckpointCoordinatorConfiguration implements Serializable {
 
     public static final long MINIMAL_CHECKPOINT_TIME = 10;
 
+    public static final long MINIMAL_ALLOWED_LATENCY = 50;
+
     private static final long serialVersionUID = 2L;
 
     private final long checkpointInterval;
@@ -182,7 +184,7 @@ public class CheckpointCoordinatorConfiguration implements Serializable {
     }
 
     public long getAllowedLatency() {
-        return allowedLatency;
+        return allowedLatency > 0 && allowedLatency < MINIMAL_ALLOWED_LATENCY ? MINIMAL_ALLOWED_LATENCY : allowedLatency;
     }
 
     @Override

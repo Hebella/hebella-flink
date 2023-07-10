@@ -192,6 +192,7 @@ class SubtaskCheckpointCoordinatorImpl implements SubtaskCheckpointCoordinator {
                 createAbortedCheckpointSetWithLimitSize(maxRecordAbortedCheckpoints);
         this.maxRecordAbortedCheckpoints = maxRecordAbortedCheckpoints;
         this.lastCheckpointId = -1L;
+        this.lastFlushEventId = -1L;
         this.closed = false;
         this.enableCheckpointAfterTasksFinished = enableCheckpointAfterTasksFinished;
         this.registerTimer = registerTimer;
@@ -257,7 +258,7 @@ class SubtaskCheckpointCoordinatorImpl implements SubtaskCheckpointCoordinator {
         if (lastFlushEventId >= flushEventID) {
             LOG.info(
                     "Out of order flush event: {} >= {}",
-                    lastCheckpointId,
+                    lastFlushEventId,
                     flushEventID);
             return;
         }

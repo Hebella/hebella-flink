@@ -738,6 +738,34 @@ class CheckpointCoordinatorTriggeringTest extends TestLogger {
     }
 
     @Test
+    void testTriggerFLushEventWithShuttingDownCoordinator() throws Exception {
+        // set up the coordinator and validate the initial state
+        ExecutionGraph graph =
+                new CheckpointCoordinatorTestingUtils.CheckpointExecutionGraphBuilder()
+                        .addJobVertex(new JobVertexID())
+                        .addJobVertex(new JobVertexID(), false)
+                        .setTransitToRunning(false)
+                        .build(EXECUTOR_RESOURCE.getExecutor());
+
+        CheckpointCoordinator checkpointCoordinator = new CheckpointCoordinatorBuilder()
+                .setCheckpointCoordinatorConfiguration(
+                        CheckpointCoordinatorConfiguration.builder()
+                                .setAllowedLatency(10)
+                                .setCheckpointInterval(Long.MAX_VALUE)
+                                .setAlignedCheckpointTimeout(Long.MAX_VALUE)
+                                .setMaxConcurrentCheckpoints(Integer.MAX_VALUE)
+                                .build())
+                .setFlushEventTimer(manuallyTriggeredScheduledExecutor)
+                .build(graph);
+
+        checkpointCoordinator.startFlushEventScheduler();
+        checkpointCoordinator.triggerFlushEvent();
+
+        checkpointCoordinator.shutdown();
+        manuallyTriggeredScheduledExecutor.triggerAll();
+    }
+
+    @Test
     void testTriggerCheckpointBeforePreviousOneCompleted() throws Exception {
         JobVertexID jobVertexID = new JobVertexID();
 

@@ -886,12 +886,18 @@ public class CheckpointCoordinatorTestingUtils {
 
         public CheckpointCoordinator build(ExecutionGraph executionGraph) throws Exception {
 
-            DefaultCheckpointPlanCalculator checkpointPlanCalculator =
+            DefaultPlanCalculator checkpointPlanCalculator =
                     new DefaultCheckpointPlanCalculator(
                             executionGraph.getJobID(),
                             new ExecutionGraphCheckpointPlanCalculatorContext(executionGraph),
                             executionGraph.getVerticesTopologically(),
                             allowCheckpointsAfterTasksFinished);
+
+            DefaultPlanCalculator flushPlanCalculator =
+                    new DefaultFlushPlanCalculator(
+                            executionGraph.getJobID(),
+                            new ExecutionGraphCheckpointPlanCalculatorContext(executionGraph),
+                            executionGraph.getVerticesTopologically());
 
             return new CheckpointCoordinator(
                     executionGraph.getJobID(),
@@ -908,7 +914,8 @@ public class CheckpointCoordinatorTestingUtils {
                     SystemClock.getInstance(),
                     checkpointStatsTracker,
                     vertexFinishedStateCheckerFactory,
-                    flushEventTimer);
+                    flushEventTimer,
+                    flushPlanCalculator);
         }
     }
 

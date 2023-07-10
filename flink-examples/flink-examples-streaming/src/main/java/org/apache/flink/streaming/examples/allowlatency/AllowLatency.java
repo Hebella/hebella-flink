@@ -40,9 +40,9 @@ public class AllowLatency {
         env.getCheckpointConfig().disableCheckpointing();
 
         env.setStateBackend(new EmbeddedRocksDBStateBackend());
-        env.getConfig().setAllowedLatency(10000);
+        env.getConfig().setAllowedLatency(5000);
 
-        long dataNum = (long) 1e8;
+        long dataNum = (long) 2e8;
         if (params.has("dataNum")) {
             dataNum = Long.parseLong(params.get("dataNum"));
             System.out.println("Number of records: " + dataNum);

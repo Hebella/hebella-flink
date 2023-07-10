@@ -222,7 +222,7 @@ public class CheckpointCoordinator {
 
     private final CheckpointRequestDecider requestDecider;
 
-    private final CheckpointPlanCalculator checkpointPlanCalculator;
+    private final PlanCalculator checkoutPlanCalculator;
 
     private boolean baseLocationsForCheckpointInitialized = false;
 
@@ -232,7 +232,9 @@ public class CheckpointCoordinator {
 
     private ScheduledFuture<?> currentPeriodicFlushTrigger;
 
-    private final CheckpointIDCounter flushEventIDCounter;
+    private long flushEventIDCounter;
+
+    private final PlanCalculator flushPlanCalculator;
 
     @GuardedBy("lock")
     private final Map<Long, FLushEventTriggerRequest> successfulFlushEvents;
@@ -250,9 +252,10 @@ public class CheckpointCoordinator {
             CheckpointsCleaner checkpointsCleaner,
             ScheduledExecutor checkpointTimer,
             CheckpointFailureManager failureManager,
-            CheckpointPlanCalculator checkpointPlanCalculator,
+            PlanCalculator checkoutPlanCalculator,
             CheckpointStatsTracker statsTracker,
-            ScheduledExecutor flushEventTimer) {
+            ScheduledExecutor flushEventTimer,
+            PlanCalculator flushPlanCalculator) {
 
         this(
                 job,
@@ -265,11 +268,12 @@ public class CheckpointCoordinator {
                 checkpointsCleaner,
                 checkpointTimer,
                 failureManager,
-                checkpointPlanCalculator,
+                checkoutPlanCalculator,
                 SystemClock.getInstance(),
                 statsTracker,
                 VertexFinishedStateChecker::new,
-                flushEventTimer);
+                flushEventTimer,
+                flushPlanCalculator);
     }
 
     @VisibleForTesting
@@ -284,7 +288,7 @@ public class CheckpointCoordinator {
             CheckpointsCleaner checkpointsCleaner,
             ScheduledExecutor checkpointTimer,
             CheckpointFailureManager failureManager,
-            CheckpointPlanCalculator checkpointPlanCalculator,
+            PlanCalculator checkoutPlanCalculator,
             Clock clock,
             CheckpointStatsTracker statsTracker,
             BiFunction<
@@ -292,7 +296,8 @@ public class CheckpointCoordinator {
                             Map<OperatorID, OperatorState>,
                             VertexFinishedStateChecker>
                     vertexFinishedStateCheckerFactory,
-            ScheduledExecutor flushEventTimer) {
+            ScheduledExecutor flushEventTimer,
+            PlanCalculator flushPlanCalculator) {
 
         // sanity checks
         checkNotNull(checkpointStorage);
@@ -322,7 +327,7 @@ public class CheckpointCoordinator {
         this.executor = checkNotNull(executor);
         this.checkpointsCleaner = checkNotNull(checkpointsCleaner);
         this.failureManager = checkNotNull(failureManager);
-        this.checkpointPlanCalculator = checkNotNull(checkpointPlanCalculator);
+        this.checkoutPlanCalculator = checkNotNull(checkoutPlanCalculator);
         this.clock = checkNotNull(clock);
         this.isExactlyOnceMode = chkConfig.isExactlyOnce();
         this.unalignedCheckpointsEnabled = chkConfig.isUnalignedCheckpointsEnabled();
@@ -370,8 +375,9 @@ public class CheckpointCoordinator {
 
         this.allowedLatency = chkConfig.getAllowedLatency();
         this.flushEventTimer = flushEventTimer;
-        this.flushEventIDCounter = new StandaloneCheckpointIDCounter();
+        this.flushEventIDCounter = 0L;
         this.successfulFlushEvents = new LinkedHashMap<>();
+        this.flushPlanCalculator = flushPlanCalculator;
     }
 
     // --------------------------------------------------------------------------------------------
@@ -592,8 +598,7 @@ public class CheckpointCoordinator {
 
             final long timestamp = System.currentTimeMillis();
 
-            CompletableFuture<CheckpointPlan> checkpointPlanFuture =
-                    checkpointPlanCalculator.calculateCheckpointPlan();
+            CompletableFuture<Plan> checkpointPlanFuture = checkoutPlanCalculator.calculateEventPlan();
 
             boolean initializeBaseLocations = !baseLocationsForCheckpointInitialized;
             baseLocationsForCheckpointInitialized = true;
@@ -620,7 +625,7 @@ public class CheckpointCoordinator {
                                             createPendingCheckpoint(
                                                     timestamp,
                                                     request.props,
-                                                    checkpointInfo.f0,
+                                                    (CheckpointPlan) checkpointInfo.f0,
                                                     request.isPeriodic,
                                                     checkpointInfo.f1,
                                                     request.getOnCompletionFuture(),
@@ -1899,36 +1904,42 @@ public class CheckpointCoordinator {
     //  Accessors
     // ------------------------------------------------------------------------
 
+    @VisibleForTesting
     public int getNumberOfSuccessfulFlushEvents() {
         synchronized (lock) {
             return this.successfulFlushEvents.size();
         }
     }
 
+    @VisibleForTesting
     public Map<Long, FLushEventTriggerRequest> getSuccessfulFlushEvents() {
         synchronized (lock) {
             return new HashMap<>(this.successfulFlushEvents);
         }
     }
 
+    @VisibleForTesting
     public int getNumberOfPendingCheckpoints() {
         synchronized (lock) {
             return this.pendingCheckpoints.size();
         }
     }
 
+    @VisibleForTesting
     public int getNumberOfRetainedSuccessfulCheckpoints() {
         synchronized (lock) {
             return completedCheckpointStore.getNumberOfRetainedCheckpoints();
         }
     }
 
+    @VisibleForTesting
     public Map<Long, PendingCheckpoint> getPendingCheckpoints() {
         synchronized (lock) {
             return new HashMap<>(this.pendingCheckpoints);
         }
     }
 
+    @VisibleForTesting
     public List<CompletedCheckpoint> getSuccessfulCheckpoints() throws Exception {
         synchronized (lock) {
             return completedCheckpointStore.getAllCheckpoints();
@@ -2032,17 +2043,17 @@ public class CheckpointCoordinator {
 
         private final long flushEventId;
 
-        private final CheckpointPlan flushEventPlan;
+        private final Plan flushEventPlan;
 
         FLushEventTriggerRequest(long flushEventId,
                                  long timestamp,
-                                 CheckpointPlan flushEventPlan) {
+                                 Plan flushEventPlan) {
             this.timestamp = timestamp;
             this.flushEventId = flushEventId;
             this.flushEventPlan = flushEventPlan;
         }
 
-        public CheckpointPlan getFlushEventPlan() {
+        public Plan getFlushEventPlan() {
             return flushEventPlan;
         }
 
@@ -2062,58 +2073,71 @@ public class CheckpointCoordinator {
 
     private void startTriggeringFlushEvent() {
         try {
+            synchronized (lock) {
+                if (shutdown) {
+                    throw new CheckpointException(CheckpointFailureReason.CHECKPOINT_COORDINATOR_SHUTDOWN);
+                }
+            }
+
             final long timestamp = System.currentTimeMillis();
 
             // use the same strategy to decide which tasks to send flush events
-            CompletableFuture<CheckpointPlan> flushPlanFuture =
-                    checkpointPlanCalculator.calculateCheckpointPlan();
+            CompletableFuture<Plan> flushPlanFuture =
+                    flushPlanCalculator.calculateEventPlan();
 
             final CompletableFuture<FLushEventTriggerRequest> flushEventRequestCompletableFuture =
                     flushPlanFuture
                             .thenApplyAsync(
                                     plan -> {
                                         try {
-                                            long flushEventID =
-                                                    flushEventIDCounter.getAndIncrement();
-                                            return new Tuple2<>(plan, flushEventID);
-                                        } catch (Throwable e) {
+                                            return createFLushEventTriggerRequest(
+                                                    plan,
+                                                    flushEventIDCounter++,
+                                                    timestamp);
+                                        } catch (CheckpointException e) {
                                             throw new CompletionException(e);
                                         }
                                     },
-                                    executor)
-                            .thenApplyAsync(
-                                    (flushEventInfo) ->
-                                            new FLushEventTriggerRequest(
-                                                    flushEventInfo.f1,
-                                                    timestamp,
-                                                    flushEventInfo.f0),
                                     flushEventTimer);
 
             // trigger flush events
-            FutureUtils.assertNoException(
-                    flushEventRequestCompletableFuture
-                            .handleAsync(
-                                    (requestFuture, throwable) -> {
-                                        if (throwable != null || requestFuture == null) {
-                                            System.out.println("An error occurs: " + throwable);
-                                        } else {
-                                            triggerFlushEvents(requestFuture);
-                                            onFlushSuccess(requestFuture);
-                                        }
-                                        return null;
-                                    },
-                                    flushEventTimer));
+            try {
+                flushEventRequestCompletableFuture
+                        .handleAsync(
+                                (requestFuture, throwable) -> {
+                                    if (throwable == null && requestFuture != null) {
+                                        triggerFlushEvents(requestFuture);
+                                        onFlushSuccess(requestFuture);
+                                    }
+                                    return null;
+                                },
+                                flushEventTimer);
+            } catch (Exception e) {
+                throw new CompletionException(e);
+            }
         } catch (Exception e) {
-            onFlushFailure();
             throw new RuntimeException(e);
         }
     }
 
+    FLushEventTriggerRequest createFLushEventTriggerRequest(
+            Plan plan, long flushEventID, long timestamp) throws CheckpointException {
+        synchronized (lock) {
+            if (shutdown) {
+                throw new CheckpointException(CheckpointFailureReason.CHECKPOINT_COORDINATOR_SHUTDOWN);
+            }
+        }
+        return new FLushEventTriggerRequest(
+                                    flushEventID,
+                                    timestamp,
+                                    plan);
+    }
+
+
+
     private void onFlushSuccess(FLushEventTriggerRequest request) {
         successfulFlushEvents.put(request.getFlushEventId(), request);
     }
-
-    private void onFlushFailure() {}
 
     private CompletableFuture<Void> triggerFlushEvents(FLushEventTriggerRequest request) {
         // send messages to the tasks to trigger flush events

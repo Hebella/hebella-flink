@@ -63,6 +63,7 @@ import org.apache.flink.runtime.jobgraph.JobVertexID;
 import org.apache.flink.runtime.jobgraph.OperatorID;
 import org.apache.flink.runtime.jobgraph.tasks.CheckpointableTask;
 import org.apache.flink.runtime.jobgraph.tasks.CoordinatedTask;
+import org.apache.flink.runtime.jobgraph.tasks.FlushingTask;
 import org.apache.flink.runtime.jobgraph.tasks.InputSplitProvider;
 import org.apache.flink.runtime.jobgraph.tasks.TaskInvokable;
 import org.apache.flink.runtime.jobgraph.tasks.TaskOperatorEventGateway;
@@ -1392,7 +1393,7 @@ public class Task
         final TaskInvokable invokable = this.invokable;
 
         if (executionState == ExecutionState.RUNNING) {
-            checkState(invokable instanceof CheckpointableTask, "invokable is not checkpointable");
+            checkState(invokable instanceof FlushingTask, "invokable can't flush");
             try {
                 ((CheckpointableTask) invokable)
                         .triggerFlushEventAsync(flushEventID, flushEventTimestamp)

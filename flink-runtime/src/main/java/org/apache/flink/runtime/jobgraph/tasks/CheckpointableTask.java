@@ -34,7 +34,7 @@ import java.util.concurrent.Future;
  * @see AbstractInvokable
  */
 @Internal
-public interface CheckpointableTask {
+public interface CheckpointableTask extends FlushingTask {
 
     /**
      * This method is called to trigger a checkpoint, asynchronously by the checkpoint coordinator.
@@ -109,21 +109,5 @@ public interface CheckpointableTask {
      */
     void abortCheckpointOnBarrier(long checkpointId, CheckpointException cause) throws IOException;
 
-    /**
-     * This method is called when a task receives a flush event with higher id from one of the input
-     * channels.
-     * @param flushEvent The flush event received from upstream tasks.
-     */
-    void triggerFlushEventOnEvent(FlushEvent flushEvent) throws IOException;
 
-    /**
-     * This method is used to broadcast flush events to downstream operators, asynchronously
-     * by the checkpoint coordinator.
-     *
-     * <p>This method is called for tasks that start the flushing operation by injecting the initial
-     * flush events, i.e., the source tasks. In contrast, flush events on downstream tasks, triggered
-     * by receiving flush events, invoke the {@link #triggerFlushEventOnEvent(FlushEvent)} method.
-     * */
-    CompletableFuture<Boolean> triggerFlushEventAsync(
-            long flushEventID, long flushEventTimeStamp);
 }

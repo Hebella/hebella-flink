@@ -26,7 +26,7 @@ import java.util.Map;
  */
 public class MyAggregator extends AbstractStreamOperator<Tuple2<Integer, Long>>
         implements OneInputStreamOperator<Integer, Tuple2<Integer, Long>> {
-    private transient Map<Integer, Long> bundle;
+    private Map<Integer, Long> bundle;
     private final KeySelector<Integer, Integer> keySelector;
     private int numOfElements;
     private MapState<Integer, Long> kvStore;
@@ -70,11 +70,20 @@ public class MyAggregator extends AbstractStreamOperator<Tuple2<Integer, Long>>
     @Override
     public void processElement(StreamRecord<Integer> element) throws Exception {
         Integer input = element.getValue();
-        Integer bundleKey = getKey(input);
-        Long bundleValue = bundle.get(bundleKey);
-        // get a new value after adding this element to bundle
-        Long newBundleValue = bundleValue == null ? 1 : bundleValue + 1;
-        bundle.put(bundleKey, newBundleValue);
+        if (getExecutionConfig().getAllowedLatency() > 0) {
+            Integer bundleKey = getKey(input);
+            Long bundleValue = bundle.get(bundleKey);
+            // get a new value after adding this element to bundle
+            Long newBundleValue = bundleValue == null ? 1 : bundleValue + 1;
+            bundle.put(bundleKey, newBundleValue);
+        } else {
+            visits += 1;
+            Integer k = getKey(input);
+            Long storeValue = kvStore.get(k);
+            Long newStoreValue = storeValue == null ? 1 : storeValue + 1;
+            kvStore.put(k, newStoreValue);
+            output.collect(new StreamRecord<>(new Tuple2<>(k, newStoreValue)));
+        }
     }
 
     @Override

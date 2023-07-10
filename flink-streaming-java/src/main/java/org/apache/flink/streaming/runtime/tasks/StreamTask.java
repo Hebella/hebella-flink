@@ -1135,21 +1135,26 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
     public CompletableFuture<Boolean> triggerFlushEventAsync(
             long flushEventID, long flushEventTimeStamp) {
         CompletableFuture<Boolean> result = new CompletableFuture<>();
-        mainMailboxExecutor.execute(
-                () -> {
-                    try {
-                        result.complete(
-                                performFlushEvent(
+        try {
+            mainMailboxExecutor.execute(
+                    () -> {
+                        try {
+                            result.complete(
+                                    performFlushEvent(
                                             flushEventID, flushEventTimeStamp));
-                    } catch (Exception ex) {
-                        // Report the failure both via the Future result but also to the mailbox
-                        result.completeExceptionally(ex);
-                        throw ex;
-                    }
-                },
-                "flush event %s at %s",
-                flushEventID,
-                flushEventTimeStamp);
+                        } catch (Exception ex) {
+                            // Report the failure both via the Future result but also to the mailbox
+                            result.completeExceptionally(ex);
+                            throw ex;
+                        }
+                    },
+                    "flush event %s at %s",
+                    flushEventID,
+                    flushEventTimeStamp);
+        } catch (Exception e) {
+            System.out.println(e);
+            result.completeExceptionally(e);
+        }
         return result;
     }
 
