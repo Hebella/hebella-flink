@@ -998,7 +998,6 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
     // ----------------------------------------------------------------------
     // Checkpointing RPCs
     // ----------------------------------------------------------------------
-
     @Override
     public CompletableFuture<Acknowledge> triggerCheckpoint(
             ExecutionAttemptID executionAttemptID,
@@ -1094,6 +1093,28 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
                             message,
                             CheckpointFailureReason.UNKNOWN_TASK_CHECKPOINT_NOTIFICATION_FAILURE));
         }
+    }
+
+    // ----------------------------------------------------------------------
+    // Flush Event RPCs
+    // ----------------------------------------------------------------------
+    @Override
+    public CompletableFuture<Acknowledge> triggerFlushEvent(
+            ExecutionAttemptID executionAttemptID,
+            long flushEventID,
+            long flushEventTimestamp) {
+        log.debug(
+                "Trigger flush event {}@{} for {}.",
+                flushEventID,
+                flushEventTimestamp,
+                executionAttemptID);
+
+        final Task task = taskSlotTable.getTask(executionAttemptID);
+        if (task != null) {
+            task.triggerFlushEvent(flushEventID, flushEventTimestamp);
+        }
+
+        return CompletableFuture.completedFuture(Acknowledge.get());
     }
 
     // ----------------------------------------------------------------------
